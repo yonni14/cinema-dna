@@ -224,7 +224,7 @@ def get_image_base64_cached(image_path):
 
 @st.cache_data
 def load_data():
-    if not os.path.exists("final_classified_db_1.0.json"): return pd.DataFrame()
+    if not os.path.exists("final_classified_db.json"): return pd.DataFrame()
     with open("final_classified_db.json", "r", encoding="utf-8") as f:
         data = json.load(f)
     flat = []
