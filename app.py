@@ -525,6 +525,6 @@ else:
         # מנגנון טעינה בטוח
         if st.session_state.display_limit < len(f_df):
             st.write("")
-            if st.button("⬇️ הצג עוד 40 סרטים", use_container_width=True):
+            if st.button(" הצג עוד ", use_container_width=True):
                 st.session_state.display_limit += 40
                 st.rerun()
