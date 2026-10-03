@@ -1,0 +1,80 @@
+import React, { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
+
+function App() {
+  const [moviesCount, setMoviesCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/api/movies')
+      .then(res => res.json())
+      .then(data => {
+        setMoviesCount(data.length);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("שגיאה בתקשורת:", err);
+        setLoading(false);
+      });
+  }, []);
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      {/* כותרת עליונה בסגנון המקורי */}
+      <header style={{ padding: '60px 0 20px 0', textAlign: 'right' }}>
+        <p style={{ fontSize: '0.8em', letterSpacing: '0.25em', color: 'rgba(0,0,0,0.5)', textShadow: '0 2px 10px rgba(0,0,0,0.5)', margin: '0 0 8px 0', fontWeight: '400', textTransform: 'uppercase' }}>מערכת ניתוח קולנועי</p>
+        <h1 style={{ fontSize: '3.2em', fontWeight: 900, color: '#1e293b', margin: 0, textShadow: '0 4px 20px rgba(0,0,0,0.4)', letterSpacing: '-0.02em' }}>קולנוע <span style={{ color: '#00ced1' }}>DNA</span></h1>
+      </header>
+
+      {/* מבנה עמודות 1:3 של סינון וגריד */}
+      <main className="max-w-7xl mx-auto flex flex-col lg:flex-row-reverse gap-8 w-full p-4 md:p-8 selection:bg-cyan-500 selection:text-slate-900" style={{ direction: 'rtl' }}>
+        
+        {/* ======== צד ימין: פילטרים (כרצועה צרה ובהירה) ======== */}
+        <section className="w-full lg:w-1/4 space-y-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-lg h-fit text-right">
+          <label className="block text-sm font-semibold text-slate-800 mb-2">חיפוש סרט במאגר</label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="הקלד שם סרט..."
+              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-right text-sm placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 shadow-sm"
+            />
+            <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+          </div>
+          
+          <hr/>
+          <div className="text-right text-slate-700 text-xs font-semibold">אנחנו לא צריכים לעצב מחדש את הפילטרים. נחבר את אלה של React לעיצוב הטורקיז בקובץ ה-CSS שנתתי לך.</div>
+        </section>
+
+        {/* ======== צד שמאל: הגריד (ברוחב מלא עם תמונות) ======== */}
+        <section className="w-full lg:w-3/4 space-y-6 text-right">
+          <p style={{ color: '#64748b', fontWeight: '600', marginBottom: '5px' }}>מאגר הסרטים הכללי | טוען {moviesCount} סרטים</p>
+
+          <div className="poster-grid">
+            {/* דוגמה לרנדור 100 תמונות מה-Backend עם ה-class המקורי שלך */}
+            {Array.from({ length: Math.min(moviesCount, 100) }).map((_, i) => (
+              <a key={i} href="#" className="poster-card relative">
+                {/* תג אחוז התאמה */}
+                <div className="match-badge">98.5%</div>
+                
+                {/* דחיפה של תמונת הפוסטר מתוך ה-API */}
+                <img 
+                  src={`http://127.0.0.1:8000/api/movies/${i}/poster`} 
+                  alt="סרט"
+                  className="poster-img"
+                />
+                
+                {/* שכבת אוברליי המקורית */}
+                <div className="poster-overlay">
+                  <p className="poster-title">שם הסרט</p>
+                  <p className="poster-meta">2023 | במאי</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default App;

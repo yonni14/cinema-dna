@@ -1,0 +1,143 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-canvas: #F7F5F0;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #EFECE4;
+  --text-primary: #141614;
+  --text-secondary: #52574F;
+  --text-muted: #858A81;
+  --line-grid: #DCD7CE;
+  --line-strong: #B2ACA0;
+  --track-inactive: #D0CBC0;
+  --accent-red: #D93829;
+}
+
+@layer base {
+  html, body, #root {
+    font-family: 'Heebo', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    direction: rtl;
+    text-align: right;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.font-mono-tech {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.movie-title-en {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Scrollbar שווייצרי דק ומדויק */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-grid);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* =========================================================
+   Swiss Range Slider (rc-slider)
+   ========================================================= */
+.rc-slider {
+  position: relative;
+  height: 12px;
+  padding: 5px 0;
+  width: 100%;
+  border-radius: 0;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.rc-slider-rail {
+  position: absolute;
+  width: 100%;
+  background-color: #D6D1C6 !important;
+  height: 1px !important;
+  border-radius: 0 !important;
+}
+
+.rc-slider-track {
+  position: absolute;
+  background-color: #141614 !important;
+  height: 1px !important;
+  border-radius: 0 !important;
+}
+
+.rc-slider-handle {
+  position: absolute;
+  width: 8px !important;
+  height: 8px !important;
+  margin-top: -3.5px !important;
+  background-color: #F7F5F0 !important;
+  border: 1.5px solid #141614 !important;
+  border-radius: 9999px !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: pointer;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.rc-slider-handle:hover,
+.rc-slider-handle:active,
+.rc-slider-handle-dragging {
+  transform: scale(1.3);
+  background-color: #141614 !important;
+  box-shadow: none !important;
+}
+
+/* Slider ייעודי עבור מודאל המשקולות */
+input[type="range"].swiss-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1px;
+  background: #D6D1C6;
+  outline: none;
+  margin: 6px 0;
+}
+
+input[type="range"].swiss-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #141614;
+  border: 1px solid #141614;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+input[type="range"].swiss-range::-webkit-slider-thumb:hover {
+  transform: scale(1.3);
+}
+
+input[type="range"].swiss-range::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #141614;
+  border: 1px solid #141614;
+  cursor: pointer;
+}
