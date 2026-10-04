@@ -4,7 +4,6 @@ import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { DNA_SCHEMA, processRawMovies, getRecommendations, DEFAULT_WEIGHTS, resolveAssetUrl } from './engine';
 import WeightsSettingsModal from './components/WeightsSettingsModal';
-import ManifestoPage from './components/ManifestoPage';
 import TheoryPage from './components/TheoryPage';
 
 // חלוקת 12 הצירים ל-3 קטגוריות
@@ -112,7 +111,7 @@ function App() {
   const [showFullDnaBreakdown, setShowFullDnaBreakdown] = useState(false);
   const [showDirectorFullDna, setShowDirectorFullDna] = useState(false);
   const pageFromPath = () => window.location.pathname.replace(/\/$/, '') === '/theory'
-    ? 'theory' : window.location.pathname.replace(/\/$/, '') === '/manifesto' ? 'manifesto' : 'home';
+    ? 'theory' : 'home';
   const [currentPage, setCurrentPage] = useState(pageFromPath);
   const navigateToPage = (page) => {
     const path = page === 'home' ? '/' : `/${page}`;
@@ -608,7 +607,8 @@ function App() {
       const valTarget = Number(
         comparisonMovie.dna?.[axis.key] ?? comparisonMovie[axis.key] ?? axis.min ?? 1
       );
-      const rawDelta = valTarget - valSelected;
+      // מסלול: מסרט ההשוואה (הקודם) אל הסרט שנבחר (החדש)
+      const rawDelta = valSelected - valTarget;
       const absDelta = Math.abs(rawDelta);
 
       if (absDelta === 0) zeroCount += 1;
@@ -923,19 +923,8 @@ function App() {
             )}
         </div>
 
-        {/* DATASET METADATA & MANIFESTO TRIGGER */}
+        {/* DATASET METADATA */}
         <div className="flex items-center flex-wrap gap-3 max-w-full" dir="ltr">
-          <button
-            type="button"
-            onClick={() => {
-              navigateToPage(currentPage === 'manifesto' ? 'home' : 'manifesto');
-              window.scrollTo({ top: 0 });
-            }}
-            className="font-mono-tech text-[10px] tracking-wider text-[#141614] hover:text-[#52574F] border border-[#DCD7CE] px-2.5 py-1.5 cursor-pointer uppercase transition-colors"
-          >
-            {currentPage === 'manifesto' ? '[ ← BACK ]' : '[ MANIFESTO ]'}
-          </button>
-
           <button
             type="button"
             onClick={() => {
@@ -964,14 +953,7 @@ function App() {
         </div>
       </header>
 
-            {currentPage === 'manifesto' ? (
-        <ManifestoPage
-          onBack={() => {
-            navigateToPage('home');
-            window.scrollTo({ top: 0 });
-          }}
-        />
-      ) : currentPage === 'theory' ? (
+            {currentPage === 'theory' ? (
         <TheoryPage
           onBack={() => {
             navigateToPage('home');
@@ -1032,10 +1014,6 @@ function App() {
                       </h2>
                     )}
                     <p className="font-mono-tech text-xs tracking-wider text-[#858A81] uppercase mt-2">
-                      {directorStats.movieCount} FILMS IN CORPUS
-                    </p>
-
-                   <p className="font-mono-tech text-xs tracking-wider text-[#858A81] uppercase mt-2">
                       {directorStats.movieCount} FILMS IN CORPUS
                     </p>
 
@@ -1747,7 +1725,7 @@ function App() {
                               }`}
                               dir="ltr"
                             >
-                              {dim.valSelected} → {dim.valTarget} ({deltaStr})
+                              {dim.valTarget} → {dim.valSelected} ({deltaStr})
                             </span>
                           </div>
 
