@@ -1,5 +1,7 @@
 Cinema DNA - definitive code set, October 2 2026
 
+Live:https://cinema-dna.pages.dev/
+
 One complete cinema-dna-frontend directory. Back up your local version, then replace it as a directory, not merge it with older feature patches.
 No favorites, personal profile, login button, auth components or cloud user profile synchronization. Matching/scoring remains unchanged. Weights still work within the current session.
 Theory page has its own /theory URL, direct load/reload and browser Back/Forward support. Existing Manifesto also uses /manifesto. Theory content is the owner's final supplied text from October 2, 17:48. All words preserved; visual headings/paragraphs and numbered list restored.
