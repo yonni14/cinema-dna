@@ -1,0 +1,40 @@
+הקמת "הצעת שינוי הדירוג" (מה לעשות אצלך, פעם אחת)
+
+כל הסודות נשמרים רק ב-Cloudflare. לעולם לא בקוד ולא בגיטהאב.
+
+א. מקום האחסון - בחר אחת משתי אפשרויות
+
+אפשרות 1 (ברירת מחדל): קובץ JSON לכל הצעה במאגר GitHub, בענף נפרד
+1. ב-GitHub, במאגר cinema-dna: צור ענף חדש בשם submissions (Branches > New branch). חשוב: ענף נפרד, כדי שכל הצעה לא תפעיל build של האתר.
+2. GitHub > Settings (של החשבון) > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token.
+   - Repository access: Only select repositories > cinema-dna בלבד.
+   - Permissions > Repository permissions > Contents: Read and write. שום דבר אחר.
+   - תוקף: עד שנה. העתק את הטוקן.
+3. הקבצים ייכתבו ל-data/rating-suggestions/ בענף submissions, קובץ נפרד לכל הצעה (אין התנגשויות כתיבה).
+   שים לב: המאגר ציבורי, כלומר ההצעות (כולל מזהה סרט ונימוק) גלויות לכולם. ה-IP נשמר רק כקוד מוצפן (hash).
+
+אפשרות 2 (פרטית, מומלצת אם רוצים IP מלא): טבלה ב-Supabase
+1. Supabase > SQL Editor > הדבק את התוכן של functions/rating_suggestions.sql > Run. הטבלה מוגנת (RLS) וללא גישה ציבורית.
+2. Project Settings > API: העתק את Project URL ואת מפתח service_role (סודי!).
+
+ב. הגדרות ב-Cloudflare
+Cloudflare > Workers & Pages > cinema-dna > Settings > Variables and Secrets > Add:
+- IP_HASH_SALT (Secret): מחרוזת אקראית ארוכה (למשל 40 תווים). חובה.
+אפשרות 1: GITHUB_TOKEN (Secret) = הטוקן, GITHUB_REPO (Text) = yonni14/cinema-dna
+אפשרות 2: SUPABASE_URL (Text), SUPABASE_SERVICE_KEY (Secret)
+אופציונלי:
+- STORE_RAW_IP = true  (שומר IP מלא במקום hash. רק עם Supabase! לא במאגר ציבורי)
+- GITHUB_BRANCH (ברירת מחדל submissions)
+- הגבלת קצב אמינה: Workers & Pages > KV > צור namespace, ואז Settings > Bindings > KV namespace, שם המשתנה RATE_LIMIT_KV. בלי זה ההגבלה (5 הצעות לשעה ל-IP) בזיכרון בלבד ופחות אמינה.
+אחרי שינוי משתנים צריך Deploy מחדש.
+
+ג. קבצים להוסיף לפרויקט
+- functions/api/rating-suggestion.js  (תיקיית functions בשורש הפרויקט cinema-dna-frontend, לא בתוך src)
+- functions/rating_suggestions.sql (רק לאפשרות 2)
+- src/components/RatingSuggestionModal.jsx
+- src/App.jsx מוחלף
+
+ד. בדיקה
+אחרי ה-Deploy: בחר סרט, פתח את הסליידרים, לחץ "להצעת שינוי הדירוג", הזז סליידר, כתוב נימוק, שלח. בדוק שהופיע קובץ בענף submissions (או שורה בטבלה).
+
+מה מוגן בצד השרת: הגבלת גודל, בדיקת ציר וטווח, חובת נימוק, honeypot נגד בוטים, הגבלת 5 הצעות לשעה ל-IP, רק מהאתר עצמו, ה-IP מוצפן ב-HMAC עם salt סודי.

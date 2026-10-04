@@ -1,0 +1,57 @@
+חבילת פריסה מלאה - Cinema DNA (כל הקבצים הסופיים)
+
+הערה: ב-WhatsApp הקבצים מגיעים עם סיומת .txt. אחרי ההורדה צריך להסיר את ה-.txt (למשל App.jsx.txt -> App.jsx).
+שורש הפרויקט למטה = התיקייה cinema-dna-frontend במאגר.
+
+1) איפה כל קובץ הולך (מחליף קובץ קיים, או חדש)
+src/App.jsx                                  מחליף
+src/engine.js                                מחליף
+src/themes.js                                חדש
+src/App.css                                  מחליף
+src/components/TheoryPage.jsx                מחליף
+src/components/ManifestoPage.jsx             מחליף
+src/components/WeightsSettingsModal.jsx      מחליף
+src/components/RatingSuggestionModal.jsx     חדש
+index.html                                   מחליף (שורש הפרויקט)
+functions/api/rating-suggestion.js           חדש (התיקייה functions נוצרת בשורש הפרויקט, ליד src, לא בתוכו)
+functions/rating_suggestions.sql             חדש (רק אם בוחרים Supabase, לא נבנה לאתר)
+rescore_metadata.py                          חדש. אפשר להחזיק מחוץ למאגר או בתיקיית scripts. לא חלק מהאתר.
+SETUP-rating-suggestions.txt                 מדריך, לא חייב להיכנס למאגר
+קבצי followup*.patch הם רק דיפים לעיון, לא נכנסים למאגר.
+
+2) סדר פעולות מומלץ
+א. הרצה מחדש של הנתונים (מחוץ לאתר, פעם אחת)
+   1. export GEMINI_API_KEYS="מפתח1,מפתח2"   (המפתחות לא נכנסים לשום קובץ)
+   2. בדיקה יבשה: python3 rescore_metadata.py --input public/final_classified_db.json --output /tmp/test.json --dry-run --limit 2
+      (מדפיס את הפרומפט ולא קורא ל-API). אחר כך הרצה על 2-3 סרטים לבדיקה, ואז על כל המאגר:
+      python3 rescore_metadata.py --input public/final_classified_db.json --output final_classified_db.rescored.json
+      אם נעצר באמצע, מריצים שוב את אותה פקודה והוא ממשיך מהמקום שעצר.
+   3. בודקים כמה סרטים בקובץ התוצאה (peak_violence_threshold, peak_sexuality_threshold, trigger_warnings, cognitive_effort, closing_resonance, themes).
+   4. רק כשהוא נראה טוב: מחליפים את public/final_classified_db.json בקובץ final_classified_db.rescored.json (באותו שם). שמור גיבוי של המקור.
+   עד שלא עושים את זה האתר עובד כרגיל: הבקרות החדשות כבויות והדמיון נשאר 12 צירים. אחרי ההחלפה יופיעו 14 צירים, תגיות נושאים, ומסנני סף.
+   אפשר לפרוס את הקוד קודם ואת הנתונים אחר כך.
+
+ב. העתקת הקבצים לפי הטבלה למעלה (VS Code: גרור לתיקיות).
+ג. בדיקה מקומית, בתיקיית cinema-dna-frontend:
+   npm install        (רק אם צריך)
+   npm run build      (חייב לעבור. שגיאות lint ישנות על searchTarget ו-wiki_url לא קשורות לנו)
+   npm run preview    (לפתוח את הכתובת שמוצגת ולבדוק)
+ד. גיט, ענף נפרד כדי ש-Cloudflare יבנה תצוגה מקדימה לפני האתר החי:
+   git checkout -b ui-update-oct4
+   git status         (לוודא שאין .env, מפתחות או node_modules)
+   git add src/App.jsx src/engine.js src/themes.js src/App.css src/components index.html
+   git commit -m "UI: 12/14 axes, threshold filters, theme pills, rating appeal"
+   git add functions
+   git commit -m "Add rating suggestion endpoint"
+   (אם נתוני הדמה הוחלפו: git add public/final_classified_db.json && git commit -m "Rescored database")
+   git push -u origin ui-update-oct4
+ה. Cloudflare: ללכת ל-Workers & Pages > cinema-dna > Deployments, למצוא את ה-Preview של הענף ולבדוק.
+   חשוב: ההצעות לשינוי דירוג דורשות משתני סביבה (שלב ו) כדי לעבוד. בלי זה, השליחה תיכשל עם הודעת שגיאה, והשאר עובד.
+   אם Root directory בהגדרות ה-Build של Cloudflare הוא cinema-dna-frontend, התיקייה functions צריכה להיות בתוכה (כמו בטבלה).
+ו. משתני סביבה ואחסון הצעות: לפי SETUP-rating-suggestions.txt (יצירת ענף submissions או טבלת Supabase, והגדרת IP_HASH_SALT, GITHUB_TOKEN או SUPABASE_*). אחרי הוספת משתנים צריך Deploy מחדש.
+ז. כשהכול טוב ב-Preview: Pull Request מהענף ל-main ו-Merge. האתר החי יתעדכן לבד.
+
+3) מה לבדוק בתצוגה המקדימה
+- סרגל הצד: סליידרי אלימות/מיניות תחת קבוצה 02; "מסנני סף וצפייה" נפתח עם בחירת הכל / עד רמה 2 / עד רמה 3 ו"סינון רגישויות נוסף".
+- כרטיס הסרט: תגיות נושאים מתחת לשם; "פתח את N הצירים"; בתחתית הרשימה הפתוחה: תגיות אזהרה (אם יש) והכפתור "להצעת שינוי הדירוג".
+- שליחת הצעה ובדיקה שהיא נשמרה (ענף submissions / טבלת Supabase).

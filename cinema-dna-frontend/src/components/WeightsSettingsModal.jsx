@@ -4,8 +4,9 @@ import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { DNA_SCHEMA, DEFAULT_WEIGHTS } from '../engine';
 
-function WeightsSettingsModal({ isOpen, onClose, weights, setWeights, onReset }) {
+function WeightsSettingsModal({ isOpen, onClose, weights, setWeights, onReset, schema }) {
   if (!isOpen) return null;
+  const axes = schema && schema.length ? schema : DNA_SCHEMA;
 
   const handleSliderChange = (key, val) => {
     setWeights((prev) => ({
@@ -14,7 +15,7 @@ function WeightsSettingsModal({ isOpen, onClose, weights, setWeights, onReset })
     }));
   };
 
-  const hasAnyModified = DNA_SCHEMA.some(
+  const hasAnyModified = axes.some(
     (item) => (weights[item.key] ?? item.weight ?? 1.0) !== (DEFAULT_WEIGHTS[item.key] ?? 1.0)
   );
 
@@ -43,7 +44,7 @@ function WeightsSettingsModal({ isOpen, onClose, weights, setWeights, onReset })
         {/* BODY */}
         <div className="p-6 overflow-y-auto space-y-6">
           <div className="grid grid-cols-1 gap-6">
-            {DNA_SCHEMA.map((item) => {
+            {axes.map((item) => {
               const currentWeight = weights[item.key] ?? item.weight ?? 1.0;
               const defaultWeight = DEFAULT_WEIGHTS[item.key] ?? 1.0;
               const isModified = Math.abs(currentWeight - defaultWeight) > 0.01;

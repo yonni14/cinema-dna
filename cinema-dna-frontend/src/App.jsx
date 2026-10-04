@@ -2,11 +2,36 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Settings, X, SlidersHorizontal, ArrowRight, ArrowLeft } from 'lucide-react';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
-import { DNA_SCHEMA, processRawMovies, getRecommendations, DEFAULT_WEIGHTS, resolveAssetUrl } from './engine';
+import { processRawMovies, buildSchema, getVectorKeys, getRecommendations, DEFAULT_WEIGHTS, resolveAssetUrl } from './engine';
+import { THEME_TRANSLATIONS } from './themes';
 import WeightsSettingsModal from './components/WeightsSettingsModal';
+import RatingSuggestionModal from './components/RatingSuggestionModal';
 import TheoryPage from './components/TheoryPage';
 
 // חלוקת 12 הצירים ל-3 קטגוריות
+// כותרות לשינוי בקלות: אזור תגיות סינון התוכן לצפייה, וקטגוריה 02 (בסרגל הצד, בגרפים ובפירוט; כוללת בסרגל גם אלימות ומיניות)
+const TRIGGER_FILTERS_HEADING = 'מסנני סף וצפייה';
+const TONE_CATEGORY_HEADING = 'המבט, הטון והחוויה';
+
+// הבהרות ניסוח: סליידרי אלימות/מיניות (קטגוריה 02) מתארים את הסרט כולו; התגיות הן שער לפי סצנת שיא
+const WHOLE_FILM_NOTE = 'רמה כוללת של הסרט כולו, לא סצנה בודדת.';
+const TRIGGER_FILTERS_NOTE = 'חוסם סרט עם סצנת שיא קיצונית אחת, גם אם הסרט כולו מתון.';
+const SUGGEST_BUTTON_LABEL = 'להצעת שינוי הדירוג';
+const WHOLE_FILM_NOTE_KEYS = ['violence_level', 'sexuality_level'];
+
+// כותרת פאנל פירוט ההשוואה (קבוע אחד, קל לשינוי)
+// סימן פתיחה/סגירה אחיד בכל האפליקציה: v = סגור (לחיצה תפתח), ^ = פתוח (לחיצה תסגור)
+const TOGGLE_CLOSED = 'v';
+const TOGGLE_OPEN = '^';
+// כפתור פתיחת 12 הצירים של הסרט במחשב
+const AXES_BUTTON_SHOW = (n) => `פתח את ${n} הצירים של הסרט`;
+const AXES_BUTTON_HIDE = (n) => `סגור את ${n} הצירים`;
+const COMPARE_PANEL_TITLE = 'פירוט ההשוואה';
+const COMPARE_ORIGIN_SUFFIX = '';
+const COMPARE_FALLBACK_SUFFIX = ' (הדומה ביותר)';
+const SIMILAR_HEADER_HINT = 'לחץ על סרט להשוואה';
+// ניסוחי מחשב (כפתור COMPARE + ריחוף)
+
 const CATEGORIES_CONFIG = [
   {
     id: 'form',
@@ -17,7 +42,7 @@ const CATEGORIES_CONFIG = [
   {
     id: 'tone',
     index: '02',
-    heTitle: 'המבט, הטון והפסיכולוגיה',
+    heTitle: TONE_CATEGORY_HEADING,
     keys: [
       'emotional_warmth',
       'psychological_depth',
@@ -25,6 +50,9 @@ const CATEGORIES_CONFIG = [
       'ambiguity_level',
       'grounded_vs_surreal',
       'emotional_heaviness',
+      // צירים חדשים (מופיעים רק כשקיימים במאגר)
+      'cognitive_effort',
+      'closing_resonance',
     ],
   },
   {
@@ -34,6 +62,42 @@ const CATEGORIES_CONFIG = [
     keys: ['violence_level', 'sexuality_level'],
   },
 ];
+
+// קבוצות הסליידרים בסרגל הצד: שני סליידרי האלימות והמיניות הועלו לרשימה הראשית
+// (קבוצה 02) במקום קטגוריית סף נפרדת. CATEGORIES_CONFIG עצמה לא משתנה (גרפים, פירוט 12 צירים).
+// SHOW_WHOLE_FILM_SLIDERS: המפרט v2.0 מבקש להסיר את שני הסליידרים האלה (ולהשאיר רק את בקרות הסף בנפרד).
+// true = נשארים כפי שאושר קודם. false = מוסרים מהסרגל.
+const SHOW_WHOLE_FILM_SLIDERS = true;
+// גם בכרטיס הצירים של הסרט הנבחר: אלימות ומיניות בקבוצה 02 (אין קבוצה 03 נפרדת של צירים)
+const TRIGGER_TAG_LABELS = {
+  sexual_assault: 'תקיפה מינית',
+  animal_harm: 'פגיעה בבעלי חיים',
+  suicide: 'התאבדות',
+};
+const SIDEBAR_CATEGORIES = [
+  CATEGORIES_CONFIG[0],
+  { ...CATEGORIES_CONFIG[1], keys: [...CATEGORIES_CONFIG[1].keys, ...(SHOW_WHOLE_FILM_SLIDERS ? CATEGORIES_CONFIG[2].keys : [])] },
+];
+
+// בקרות סף לסינון לפי סצנת שיא (1-4): מקסימום מותר. 4 = הכל. מסדר המפרט: הכל, עד רמה 2, עד רמה 3
+const PEAK_LEVEL_OPTIONS = [
+  { value: 4, label: 'הכל' },
+  { value: 2, label: 'עד רמה 2' },
+  { value: 3, label: 'עד רמה 3' },
+];
+const SENSITIVITY_TOGGLE_LABEL = 'סינון רגישויות נוסף';
+const SENSITIVITY_OPTIONS = [
+  { key: 'noSexualAssault', trigger: 'sexual_assault', label: 'ללא תקיפה מינית' },
+  { key: 'noAnimalHarm', trigger: 'animal_harm', label: 'ללא פגיעה בבעלי חיים' },
+  { key: 'noSuicide', trigger: 'suicide', label: 'ללא התאבדות' },
+];
+const DEFAULT_CONTENT_FILTERS = {
+  maxViolence: 4,
+  maxSexual: 4,
+  noSexualAssault: false,
+  noAnimalHarm: false,
+  noSuicide: false,
+};
 
 // דיאגרמה מעגלית שווייצרית (Circular Gauge)
 const CircularGauge = ({
@@ -86,13 +150,53 @@ const CircularGauge = ({
   );
 };
 
+// דיאגרמה מעגלית קטנה לכותרת של פאנל ההשוואה (מוצגת גם כשהפאנל סגור)
+const MiniGauge = ({ value = 0, size = 44, strokeWidth = 2.5 }) => {
+  const radius = (size - strokeWidth * 2) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const clamped = Math.min(100, Math.max(0, value));
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }} dir="ltr">
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke="#DCD7CE" strokeWidth={strokeWidth} fill="transparent" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#141614"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - (clamped / 100) * circumference}
+          strokeLinecap="round"
+          fill="transparent"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center font-mono-tech text-[10px] font-bold text-[#141614]">
+        {Math.round(clamped)}%
+      </span>
+    </div>
+  );
+};
+
 function App() {
   const [allMovies, setAllMovies] = useState([]);
   const [schema, setSchema] = useState([]);
+  const [vectorKeys, setVectorKeys] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null);
+  const [isSuggestOpen, setIsSuggestOpen] = useState(false);
   const [pinnedComparisonMovie, setPinnedComparisonMovie] = useState(null);
-  const [navigationHistory, setNavigationHistory] = useState([]);
   const [hoveredMovieId, setHoveredMovieId] = useState(null);
+  // מחשב (lg ומעלה): כפתור COMPARE ותצוגת ריחוף. במובייל: השוואה אוטומטית לסרט שממנו הגעת
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const [navigationHistory, setNavigationHistory] = useState([]);
   const [selectedDirector, setSelectedDirector] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -110,6 +214,13 @@ function App() {
 
   const [showFullDnaBreakdown, setShowFullDnaBreakdown] = useState(false);
   const [showDirectorFullDna, setShowDirectorFullDna] = useState(false);
+  const [isComparePanelOpen, setIsComparePanelOpen] = useState(false);
+  const [isAxesOpen, setIsAxesOpen] = useState(false);
+  // מסנני סף וצפייה: אקורדיון סגור כברירת מחדל
+  const [isTriggerFiltersOpen, setIsTriggerFiltersOpen] = useState(false);
+  // תגיות סינון תוכן לצפייה (שער בוליאני קשיח על שדות peak_*)
+  const [contentFilters, setContentFilters] = useState(DEFAULT_CONTENT_FILTERS);
+  const [isSensitivityOpen, setIsSensitivityOpen] = useState(false);
   const pageFromPath = () => window.location.pathname.replace(/\/$/, '') === '/theory'
     ? 'theory' : 'home';
   const [currentPage, setCurrentPage] = useState(pageFromPath);
@@ -141,12 +252,14 @@ function App() {
     fetch(`/final_classified_db.json?v=${Date.now()}`)
       .then((res) => res.json())
       .then((rawData) => {
-        const processed = processRawMovies(rawData);
+        const sch = buildSchema(rawData);
+        const processed = processRawMovies(rawData, sch);
         setAllMovies(processed);
-        setSchema(DNA_SCHEMA);
+        setSchema(sch);
+        setVectorKeys(getVectorKeys(sch));
 
         const initialFilters = {};
-        DNA_SCHEMA.forEach((item) => {
+        sch.forEach((item) => {
           initialFilters[item.key] = [item.min ?? 1, item.max ?? 10];
         });
         setNumFilters(initialFilters);
@@ -181,10 +294,13 @@ function App() {
     return stats;
   }, [allMovies, schema]);
 
+  // הצירים שנכנסים לוקטור הדמיון ולפירוט 12 הצירים (בלי אלימות/מיניות כשהצירים החדשים קיימים)
+  const vectorSchema = useMemo(() => schema.filter((a) => vectorKeys.includes(a.key)), [schema, vectorKeys]);
+
   const computeVectorDistance = (movieA, movieB) => {
-    if (!movieA || !movieB || !schema.length) return 0;
+    if (!movieA || !movieB || !vectorSchema.length) return 0;
     let sumSq = 0;
-    schema.forEach((axis) => {
+    vectorSchema.forEach((axis) => {
       const w = weights[axis.key] ?? axis.weight ?? 1.0;
       if (w <= 0) return;
       const stat = corpusStats[axis.key] || { mean: 5, std: 1 };
@@ -211,16 +327,31 @@ function App() {
       reset[item.key] = [item.min ?? 1, item.max ?? 10];
     });
     setNumFilters(reset);
+    setContentFilters(DEFAULT_CONTENT_FILTERS);
     setDisplayLimit(40);
   };
 
+  const activeTriggerCount =
+    (contentFilters.maxViolence < 4 ? 1 : 0) +
+    (contentFilters.maxSexual < 4 ? 1 : 0) +
+    SENSITIVITY_OPTIONS.filter((o) => contentFilters[o.key]).length;
+  // האם שדות הסף החדשים כבר קיימים במאגר (אחרת תגיות הסינון מושבתות)
+  const hasPeakData = useMemo(
+    () => allMovies.some((m) => m.peak_violence_threshold != null || m.peak_sexuality_threshold != null),
+    [allMovies]
+  );
+
+  // האם קיימים במאגר נתוני trigger_warnings (אחרת תיבות הרגישויות מושבתות)
+  const hasTriggerData = useMemo(() => allMovies.some((m) => m.trigger_warnings !== null), [allMovies]);
+
   const hasActiveFilters = useMemo(() => {
+    if (activeTriggerCount > 0) return true;
     return schema.some((item) => {
       const range = numFilters[item.key];
       if (!range) return false;
       return range[0] > (item.min ?? 1) || range[1] < (item.max ?? 10);
     });
-  }, [schema, numFilters]);
+  }, [schema, numFilters, activeTriggerCount]);
 
   const handleMovieSelect = (id, options = {}) => {
     if (id === undefined || id === null) return;
@@ -489,6 +620,17 @@ function App() {
       }
     });
 
+    // שלב A (שער קשיח, לפני הצגת הדמיון): סרט שחורג מהמקסימום שנבחר, או מכיל אזהרה שנבחרה, מוסר מהרשימה.
+    // סרט בלי נתון (null / אין trigger_warnings) לא מוסר.
+    result = result.filter((m) => {
+      if (m.peak_violence_threshold != null && m.peak_violence_threshold > contentFilters.maxViolence) return false;
+      if (m.peak_sexuality_threshold != null && m.peak_sexuality_threshold > contentFilters.maxSexual) return false;
+      for (const o of SENSITIVITY_OPTIONS) {
+        if (contentFilters[o.key] && m.trigger_warnings && m.trigger_warnings.includes(o.trigger)) return false;
+      }
+      return true;
+    });
+
     if (selectedMovie) {
       const activeId = selectedMovie.movie.id;
       const scores = selectedMovie.match_scores || {};
@@ -528,14 +670,14 @@ function App() {
     }
 
     return result;
-  }, [allMovies, schema, numFilters, selectedMovie, selectedDirector, weights, corpusStats]);
+  }, [allMovies, schema, numFilters, contentFilters, selectedMovie, selectedDirector, weights, corpusStats]);
 
   const visibleMovies = filteredAndSortedMovies.slice(0, displayLimit);
 
   const comparisonMovie = useMemo(() => {
     if (!selectedMovie) return null;
 
-    if (hoveredMovieId !== null) {
+    if (isDesktop && hoveredMovieId !== null) {
       const hovered = allMovies.find((m) => m.id === hoveredMovieId);
       if (hovered && hovered.id !== selectedMovie.movie.id) {
         const score = selectedMovie.match_scores?.[hovered.id] || 0;
@@ -593,16 +735,16 @@ function App() {
     }
 
     return null;
-  }, [selectedMovie, filteredAndSortedMovies, hoveredMovieId, pinnedComparisonMovie, allMovies]);
+  }, [selectedMovie, filteredAndSortedMovies, hoveredMovieId, isDesktop, pinnedComparisonMovie, allMovies]);
 
   const matchAnalysisData = useMemo(() => {
-    if (!selectedMovie || !comparisonMovie || !schema.length) return null;
+    if (!selectedMovie || !comparisonMovie || !vectorSchema.length) return null;
 
     let zeroCount = 0;
     let closeCount = 0;
     let diffCount = 0;
 
-    const allAxes = schema.map((axis) => {
+    const allAxes = vectorSchema.map((axis) => {
       const valSelected = Number(selectedMovie.movie[axis.key] ?? axis.min ?? 1);
       const valTarget = Number(
         comparisonMovie.dna?.[axis.key] ?? comparisonMovie[axis.key] ?? axis.min ?? 1
@@ -635,12 +777,15 @@ function App() {
       closeCount,
       diffCount,
     };
-  }, [selectedMovie, comparisonMovie, schema]);
+  }, [selectedMovie, comparisonMovie, vectorSchema]);
 
+  // תשתית לשימוש עתידי (אשכולות): ציון ממוצע לכל קטגוריה. כרגע לא מוצג בשום מקום.
+  // eslint-disable-next-line no-unused-vars
   const categoryPillars = useMemo(() => {
     if (!selectedMovie || !schema.length) return [];
 
-    return CATEGORIES_CONFIG.map((cat) => {
+    // בכרטיס הסרט מוצגות רק שתי הקטגוריות הראשונות; קטגוריית הסף (03) נשארת בחישוב הדמיון בלבד
+    return CATEGORIES_CONFIG.filter((cat) => cat.id !== 'thresholds').map((cat) => {
       let totalNormalized = 0;
       let count = 0;
 
@@ -679,6 +824,154 @@ function App() {
     if (e.currentTarget.src !== PLACEHOLDER_IMG) e.currentTarget.src = PLACEHOLDER_IMG;
   };
 
+  // גוף ניתוח ההשוואה - משותף לפאנל הצד (מחשב) ולפאנל הנפתח מתחת לעמודות הממוצעים
+  const renderMatchAnalysisBody = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img
+            src={getImageUrl(selectedMovie.movie.local_poster)}
+            alt={selectedMovie.movie.display_h}
+            className="w-[42px] h-[63px] object-cover border border-[#DCD7CE] shrink-0"
+            onError={handleImgError}
+          />
+          <div className="min-w-0">
+            <span className="font-mono-tech text-[9px] text-[#858A81] uppercase block">
+              SELECTED
+            </span>
+            <h4 className="text-xs font-semibold text-[#141614] truncate">
+              {selectedMovie.movie.display_h}
+            </h4>
+          </div>
+        </div>
+
+        <span className="font-mono-tech text-[10px] text-[#858A81] shrink-0">VS</span>
+
+        <div className="flex items-center gap-2.5 min-w-0 justify-end">
+          <div className="min-w-0 text-left">
+            <span className="font-mono-tech text-[9px] text-[#858A81] uppercase block">
+              {isDesktop ? 'COMPARE' : matchAnalysisData.targetMovie.comparisonSource === 'origin' ? 'FROM' : 'TOP MATCH'}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleMovieSelect(matchAnalysisData.targetMovie.id)}
+              className="text-xs font-semibold text-[#141614] hover:underline truncate block"
+              title={matchAnalysisData.targetMovie.display_h}
+            >
+              {matchAnalysisData.targetMovie.display_h}
+            </button>
+          </div>
+          <img
+            src={getImageUrl(matchAnalysisData.targetMovie.local_poster)}
+            alt={matchAnalysisData.targetMovie.display_h}
+            className="w-[42px] h-[63px] object-cover border border-[#DCD7CE] shrink-0"
+            onError={handleImgError}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center justify-center py-4 border-y border-[#DCD7CE]">
+        <CircularGauge
+          value={matchAnalysisData.targetMovie.matchScore}
+          size={110}
+          strokeWidth={3}
+          label="SIMILARITY"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 border-b border-[#DCD7CE] pb-4 text-center" dir="ltr">
+        <div>
+          <div className="font-mono-tech text-base font-bold text-[#141614]">
+            {String(matchAnalysisData.zeroCount).padStart(2, '0')}
+          </div>
+          <div className="font-mono-tech text-[8px] tracking-wider text-[#858A81] uppercase">
+            IDENTICAL
+          </div>
+        </div>
+        <div>
+          <div className="font-mono-tech text-base font-bold text-[#141614]">
+            {String(matchAnalysisData.closeCount).padStart(2, '0')}
+          </div>
+          <div className="font-mono-tech text-[8px] tracking-wider text-[#858A81] uppercase">
+            CLOSE (±1)
+          </div>
+        </div>
+        <div>
+          <div className="font-mono-tech text-base font-bold text-[#D93829]">
+            {String(matchAnalysisData.diffCount).padStart(2, '0')}
+          </div>
+          <div className="font-mono-tech text-[8px] tracking-wider text-[#D93829] uppercase">
+            DIFFERENT (≥2)
+          </div>
+        </div>
+      </div>
+
+      {/* 12 הצירים - צבע אדום בלעדי לפער של 2 ומעלה */}
+      <div className="space-y-4">
+        <div className="flex items-baseline justify-between font-mono-tech text-[10px] text-[#858A81] uppercase" dir="ltr">
+          <span>{vectorKeys.length} AXES DELTA</span>
+          <span>LARGEST FIRST</span>
+        </div>
+
+        <div className="space-y-3">
+          {matchAnalysisData.axes.map((dim) => {
+            const deltaStr =
+              dim.rawDelta > 0
+                ? `+${dim.rawDelta}`
+                : dim.rawDelta === 0
+                ? '0'
+                : `${dim.rawDelta}`;
+            const isHighDiff = dim.absDelta >= 2;
+
+            return (
+              <div key={dim.key} className="space-y-1">
+                <div className="flex justify-between items-baseline text-xs">
+                  <span className="text-[#141614] truncate">{dim.label}</span>
+                  <span
+                    className={`font-mono-tech text-xs shrink-0 ${
+                      isHighDiff
+                        ? 'text-[#D93829] font-bold'
+                        : 'text-[#141614] font-medium'
+                    }`}
+                    dir="ltr"
+                  >
+                    {dim.valTarget} → {dim.valSelected} ({deltaStr})
+                  </span>
+                </div>
+
+                <div className="w-full h-[1px] bg-[#DCD7CE] relative">
+                  {dim.absDelta > 0 && (
+                    <div
+                      className={`h-full absolute ${
+                        isHighDiff ? 'bg-[#D93829]' : 'bg-[#141614]'
+                      }`}
+                      style={{ width: `${Math.min(100, (dim.absDelta / 9) * 100)}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-[#DCD7CE] space-y-1.5 font-mono-tech text-[10px]" dir="ltr">
+        <div className="flex justify-between">
+          <span className="text-[#858A81]">VECTOR DISTANCE</span>
+          <span className="text-[#141614]">
+            {(matchAnalysisData.targetMovie.vectorDistance ?? 0).toFixed(3)}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[#858A81]">DIRECTOR BONUS</span>
+          <span className="text-[#141614]">
+            +{matchAnalysisData.targetMovie.directorBonus ?? 0}%
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
   const toggleSidebarCategory = (catId) => {
     setOpenCategories((prev) => ({
       ...prev,
@@ -711,7 +1004,7 @@ function App() {
               DNA PROFILE
             </h2>
             <p className="font-mono-tech text-[10px] tracking-[0.12em] text-[#858A81] mt-0.5">
-              12 DIMENSIONS
+              {vectorKeys.length} DIMENSIONS
             </p>
           </div>
 
@@ -738,7 +1031,7 @@ function App() {
         </div>
       </div>
 
-      {CATEGORIES_CONFIG.map((cat) => {
+      {SIDEBAR_CATEGORIES.map((cat) => {
         const isOpen = openCategories[cat.id] ?? false;
         const items = cat.keys.map((k) => schemaMap[k]).filter(Boolean);
 
@@ -759,7 +1052,7 @@ function App() {
                 </span>
               </div>
               <span className="font-mono-tech text-xs text-[#858A81] group-hover:text-[#141614]">
-                {isOpen ? '−' : '+'}
+                {isOpen ? TOGGLE_OPEN : TOGGLE_CLOSED}
               </span>
             </button>
 
@@ -789,6 +1082,10 @@ function App() {
                         </span>
                       </div>
 
+                      {WHOLE_FILM_NOTE_KEYS.includes(item.key) && (
+                        <p className="text-[10px] text-[#858A81]" dir="rtl">{WHOLE_FILM_NOTE}</p>
+                      )}
+
                       <div
                         className="flex justify-between items-center text-[10px] text-[#52574F] pt-0.5"
                         dir="ltr"
@@ -809,6 +1106,7 @@ function App() {
                           }}
                         />
                       </div>
+
                     </div>
                   );
                 })}
@@ -817,6 +1115,109 @@ function App() {
           </div>
         );
       })}
+
+      {/* תגיות סינון תוכן לצפייה */}
+      <div className="border-b border-[#DCD7CE] pb-6 last:border-b-0" dir="rtl">
+        <button
+          type="button"
+          onClick={() => setIsTriggerFiltersOpen((prev) => !prev)}
+          aria-expanded={isTriggerFiltersOpen}
+          className="w-full flex items-baseline justify-between text-right pb-3 border-b border-[#DCD7CE]/60 cursor-pointer group select-none"
+          dir="rtl"
+        >
+          <span className="text-sm font-semibold text-[#141614] group-hover:text-[#52574F] transition-colors">
+            {TRIGGER_FILTERS_HEADING}
+            {activeTriggerCount > 0 && (
+              <span className="font-mono-tech text-[10px] text-[#858A81] mr-2" dir="ltr">({activeTriggerCount})</span>
+            )}
+          </span>
+          <span className="font-mono-tech text-xs text-[#858A81] group-hover:text-[#141614]">
+            {isTriggerFiltersOpen ? TOGGLE_OPEN : TOGGLE_CLOSED}
+          </span>
+        </button>
+        {isTriggerFiltersOpen && (
+        <div className="space-y-4 pt-4">
+        {[
+          { key: 'maxViolence', label: 'אלימות מרבית בסצנת שיא' },
+          { key: 'maxSexual', label: 'מיניות מרבית בסצנת שיא' },
+        ].map((row) => (
+          <div key={row.key} className="space-y-1.5">
+            <span className="text-xs font-medium text-[#141614] block">{row.label}</span>
+            <div className="flex" role="group" aria-label={row.label}>
+              {PEAK_LEVEL_OPTIONS.map((opt) => {
+                const active = contentFilters[row.key] === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={!hasPeakData}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setContentFilters((prev) => ({ ...prev, [row.key]: opt.value }));
+                      setDisplayLimit(40);
+                    }}
+                    className={`flex-1 text-xs px-2 py-1.5 border -mr-px first:mr-0 transition-colors ${
+                      !hasPeakData
+                        ? 'border-[#DCD7CE] text-[#858A81] cursor-not-allowed'
+                        : active
+                        ? 'bg-[#141614] text-[#F7F5F0] border-[#141614] cursor-pointer'
+                        : 'border-[#DCD7CE] text-[#141614] hover:border-[#141614] cursor-pointer'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <p className="text-[10px] text-[#858A81] leading-relaxed">{TRIGGER_FILTERS_NOTE}</p>
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setIsSensitivityOpen((prev) => !prev)}
+            aria-expanded={isSensitivityOpen}
+            className="w-full flex items-baseline justify-between text-right cursor-pointer select-none group"
+            dir="rtl"
+          >
+            <span className="text-xs font-medium text-[#141614] group-hover:text-[#52574F]">{SENSITIVITY_TOGGLE_LABEL}</span>
+            <span className="font-mono-tech text-xs text-[#858A81] group-hover:text-[#141614]">
+              {isSensitivityOpen ? TOGGLE_OPEN : TOGGLE_CLOSED}
+            </span>
+          </button>
+          {isSensitivityOpen && (
+            <div className="space-y-2 pt-1">
+              {SENSITIVITY_OPTIONS.map((o) => (
+                <label
+                  key={o.key}
+                  className={`flex items-center gap-2 text-xs ${hasTriggerData ? 'text-[#141614] cursor-pointer' : 'text-[#858A81] cursor-not-allowed'}`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!hasTriggerData}
+                    checked={!!contentFilters[o.key]}
+                    onChange={() => {
+                      setContentFilters((prev) => ({ ...prev, [o.key]: !prev[o.key] }));
+                      setDisplayLimit(40);
+                    }}
+                    className="accent-[#141614]"
+                  />
+                  <span>{o.label}</span>
+                </label>
+              ))}
+              {!hasTriggerData && (
+                <p className="text-[10px] text-[#858A81]">נתוני הרגישויות טרם נוספו למאגר.</p>
+              )}
+            </div>
+          )}
+        </div>
+        {!hasPeakData && (
+          <p className="text-[10px] text-[#858A81]">נתוני הסף לסינון תוכן טרם נוספו למאגר.</p>
+        )}
+        </div>
+        )}
+      </div>
     </div>
   );
 
@@ -832,7 +1233,7 @@ function App() {
           >
             <span className="font-mono-tech text-xs text-[#858A81]">01</span>
             <span className="text-lg font-bold tracking-tight text-[#141614] group-hover:text-[#52574F] transition-colors">
-              קולנוע DNA
+              Cinema DNA
             </span>
           </button>
         </div>
@@ -1105,8 +1506,8 @@ function App() {
                         className="font-mono-tech text-xs font-semibold tracking-wider text-[#141614] hover:text-[#52574F] underline cursor-pointer transition-colors"
                       >
                         {showDirectorFullDna
-                          ? 'הסתר את 12 הצירים המלאים  ↑'
-                          : 'הצג את 12 הצירים המלאים  ↓'}
+                          ? `הסתר את ${vectorKeys.length} הצירים המלאים  ${TOGGLE_OPEN}`
+                          : `הצג את ${vectorKeys.length} הצירים המלאים  ${TOGGLE_CLOSED}`}
                       </button>
                     </div>
 
@@ -1148,8 +1549,9 @@ function App() {
                   {/* פירוט 12 הצירים המלאים של ממוצע הבמאי (סגור בברירת מחדל) */}
                   {showDirectorFullDna && (
                     <div className="pt-6 border-t border-[#DCD7CE] space-y-8">
-                      {CATEGORIES_CONFIG.map((cat) => {
-                        const catItems = cat.keys.map((k) => schemaMap[k]).filter(Boolean);
+                      {SIDEBAR_CATEGORIES.map((cat) => {
+                        const catItems = cat.keys.filter((k) => vectorKeys.includes(k)).map((k) => schemaMap[k]).filter(Boolean);
+                        if (catItems.length === 0) return null;
 
                         return (
                           <div key={cat.id} className="space-y-4">
@@ -1206,7 +1608,8 @@ function App() {
 
             {/* SELECTED FILM */}
             {selectedMovie && (
-              <div className="pb-10 border-b border-[#DCD7CE] space-y-8">
+            <div className="space-y-3 lg:space-y-10">
+              <div className={`pb-0 ${showFullDnaBreakdown ? 'lg:pb-10' : 'lg:pb-2'} ${showFullDnaBreakdown ? 'lg:border-b' : ''} border-[#DCD7CE] space-y-8`}>
                 {/* Breadcrumbs */}
                 <div className="flex items-center justify-between pb-2.5 border-b border-[#DCD7CE]" dir="ltr">
                   <div className="flex items-center gap-2 font-mono-tech text-[10px] tracking-wider text-[#858A81] uppercase truncate">
@@ -1297,6 +1700,16 @@ function App() {
                         </button>
                       </div>
 
+                      {selectedMovie.movie.themes && selectedMovie.movie.themes.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5" dir="rtl">
+                          {selectedMovie.movie.themes.map((t) => (
+                            <span key={t} className="text-[11px] px-2 py-0.5 border border-[#DCD7CE] text-[#52574F]">
+                              {THEME_TRANSLATIONS[t] || t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
                       {selectedMovie.movie.description && (
                         <p
                           dir="auto"
@@ -1307,7 +1720,7 @@ function App() {
                       )}
                     </div>
 
-                    <div className="mt-6 pt-4 border-t border-[#DCD7CE] flex flex-wrap items-center justify-between gap-4 text-xs">
+                    <div className={`mt-6 pt-4 lg:border-t-0 lg:pt-0 border-t border-[#DCD7CE] flex flex-wrap items-center justify-between gap-4 text-xs`}>
                       {((selectedMovie.movie.oscar_wins ?? 0) > 0 ||
                         (selectedMovie.movie.oscar_nominations ?? 0) > 0) && (
                         <div className="font-mono-tech text-[10px] tracking-wider text-[#C5A059] uppercase flex items-center gap-1.5">
@@ -1367,50 +1780,44 @@ function App() {
                   </div>
                 </div>
 
-                {/* 3 דיאגרמות מעגליות לקטגוריות וכפתור פתיחת הפירוט המלא */}
-                <div className="pt-6 border-t border-[#DCD7CE]">
-                  <div className="flex items-baseline justify-between mb-4">
-                    <span className="font-mono-tech text-[10px] tracking-widest text-[#858A81] uppercase">
-                      DNA PILLARS SPECIMEN / 3 AXES
+                <div className="space-y-3 lg:space-y-0">
+                {/* גרפי הקטגוריות (2 העיגולים) הוסרו מהתצוגה. החישוב categoryPillars נשמר למעלה לשימוש עתידי (אשכולות). במחשב: כפתור פתיחת 12 הצירים */}
+                <div className="hidden lg:block mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowFullDnaBreakdown((prev) => !prev)}
+                    aria-expanded={showFullDnaBreakdown}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 border border-[#DCD7CE] text-right cursor-pointer hover:bg-[#EFECE4] transition-colors"
+                    dir="rtl"
+                  >
+                    <span className="text-xs font-semibold text-[#141614]">
+                      {showFullDnaBreakdown ? AXES_BUTTON_HIDE(vectorKeys.length) : AXES_BUTTON_SHOW(vectorKeys.length)}
                     </span>
-                   <button
-                      type="button"
-                      onClick={() => setShowFullDnaBreakdown((prev) => !prev)}
-                      className="font-mono-tech text-xs font-semibold tracking-wider text-[#141614] hover:text-[#52574F] underline cursor-pointer transition-colors"
-                    >
-                      {showFullDnaBreakdown
-                        ? 'הסתר את 12 הצירים המלאים  ↑'
-                        : 'הצג את 12 הצירים המלאים  ↓'}
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 py-2">
-                    {categoryPillars.map((pil) => (
-                      <div key={pil.id} className="flex flex-col items-center text-center space-y-2">
-                        <CircularGauge
-                          value={pil.score}
-                          size={96}
-                          strokeWidth={2.5}
-                          label={pil.index}
-                        />
-                        <div>
-                          <span className="text-xs font-semibold text-[#141614] block">
-                            {pil.title}
-                          </span>
-                          <span className="font-mono-tech text-[10px] text-[#858A81]">
-                            מדד משוקלל
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    <span className="font-mono-tech text-xs text-[#141614] shrink-0" dir="ltr">
+                      {showFullDnaBreakdown ? `[ ${TOGGLE_OPEN} ]` : `[ ${TOGGLE_CLOSED} ]`}
+                    </span>
+                  </button>
                 </div>
 
+                {/* מובייל: אקורדיון סגור לציוני הסרט עצמו (12 הצירים). במחשב: הכפתור "הצג את 12 הצירים" */}
+                <button
+                  type="button"
+                  onClick={() => setIsAxesOpen((prev) => !prev)}
+                  aria-expanded={isAxesOpen}
+                  className="lg:hidden w-full flex items-center justify-between gap-3 px-4 py-3 border border-[#DCD7CE] text-right cursor-pointer hover:bg-[#EFECE4] transition-colors"
+                  dir="rtl"
+                >
+                  <span className="text-xs font-semibold text-[#141614]">{vectorKeys.length} הצירים של הסרט</span>
+                  <span className="font-mono-tech text-xs text-[#141614] shrink-0" dir="ltr">
+                    {isAxesOpen ? `[ ${TOGGLE_OPEN} ]` : `[ ${TOGGLE_CLOSED} ]`}
+                  </span>
+                </button>
+
                 {/* פירוט מלא של 12 הצירים בתצורה תואמת לסרגל הצד */}
-                {showFullDnaBreakdown && (
-                  <div className="pt-6 border-t border-[#DCD7CE] space-y-8">
-                    {CATEGORIES_CONFIG.map((cat) => {
-                      const catItems = cat.keys.map((k) => schemaMap[k]).filter(Boolean);
+                  <div className={`${isAxesOpen ? 'block' : 'hidden'} ${showFullDnaBreakdown ? 'lg:block' : 'lg:hidden'} lg:mt-8 pt-6 border-t border-[#DCD7CE] space-y-8`}>
+                    {SIDEBAR_CATEGORIES.map((cat) => {
+                      const catItems = cat.keys.filter((k) => vectorKeys.includes(k)).map((k) => schemaMap[k]).filter(Boolean);
+                      if (catItems.length === 0) return null;
 
                       return (
                         <div key={cat.id} className="space-y-4">
@@ -1459,9 +1866,69 @@ function App() {
                         </div>
                       );
                     })}
+
+                    {selectedMovie.movie.trigger_warnings && selectedMovie.movie.trigger_warnings.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-baseline gap-2 font-mono-tech text-xs text-[#858A81] pb-1 border-b border-[#DCD7CE]/60">
+                          <span>03 {'/'}</span>
+                          <span className="text-[#141614] font-semibold">מסנני סף וצפייה</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5" dir="rtl">
+                          {selectedMovie.movie.trigger_warnings.map((t) => (
+                            <span key={t} className="text-[11px] px-2 py-0.5 border border-[#141614] text-[#141614]">
+                              {TRIGGER_TAG_LABELS[t] || t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div dir="rtl">
+                      <button
+                        type="button"
+                        onClick={() => setIsSuggestOpen(true)}
+                        className="text-[11px] underline underline-offset-2 text-[#52574F] hover:text-[#141614] cursor-pointer"
+                      >
+                        {SUGGEST_BUTTON_LABEL}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            {/* פאנל פירוט ההשוואה - סגור כברירת מחדל */}
+            {selectedMovie && matchAnalysisData && (
+              <div className="lg:hidden border border-[#DCD7CE]">
+                <button
+                  type="button"
+                  onClick={() => setIsComparePanelOpen((prev) => !prev)}
+                  aria-expanded={isComparePanelOpen}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right cursor-pointer hover:bg-[#EFECE4] transition-colors"
+                  dir="rtl"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-[#141614]">{COMPARE_PANEL_TITLE}</span>
+                    <span className="block text-[10px] text-[#858A81] truncate">
+                      מושווה כעת: {matchAnalysisData.targetMovie.display_h}
+                      {isDesktop ? '' : matchAnalysisData.targetMovie.comparisonSource === 'origin' ? COMPARE_ORIGIN_SUFFIX : COMPARE_FALLBACK_SUFFIX}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-3 shrink-0">
+                    {!isComparePanelOpen && <MiniGauge value={matchAnalysisData.targetMovie.matchScore ?? 0} />}
+                    <span className="font-mono-tech text-xs text-[#141614]" dir="ltr">
+                      {isComparePanelOpen ? `[ ${TOGGLE_OPEN} ]` : `[ ${TOGGLE_CLOSED} ]`}
+                    </span>
+                  </span>
+                </button>
+                {isComparePanelOpen && (
+                  <div className="px-4 pb-4 pt-2 border-t border-[#DCD7CE]">
+                    {renderMatchAnalysisBody()}
                   </div>
                 )}
               </div>
+            )}
+
+            </div>
             )}
 
             {/* MOVIE GRID */}
@@ -1471,7 +1938,7 @@ function App() {
                   {selectedMovie ? 'SIMILAR FILMS' : selectedDirector ? 'DIRECTOR CATALOG' : 'CATALOG'}
                 </span>
                 <span className="font-mono-tech text-[10px] tracking-wider text-[#52574F]">
-                  {filteredAndSortedMovies.length} ENTRIES
+                  {selectedMovie && !isDesktop ? SIMILAR_HEADER_HINT : `${filteredAndSortedMovies.length} ENTRIES`}
                 </span>
               </div>
 
@@ -1499,8 +1966,8 @@ function App() {
                         <div
                           key={movie.id}
                           onClick={() => handleMovieSelect(movie.id)}
-                          onMouseEnter={() => setHoveredMovieId(movie.id)}
-                          onMouseLeave={() => setHoveredMovieId(null)}
+                          onMouseEnter={isDesktop ? () => setHoveredMovieId(movie.id) : undefined}
+                          onMouseLeave={isDesktop ? () => setHoveredMovieId(null) : undefined}
                           className="group cursor-pointer flex flex-col"
                         >
                           <div
@@ -1526,11 +1993,12 @@ function App() {
                                   e.stopPropagation();
                                   setPinnedComparisonMovie(movie);
                                 }}
-                                className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity font-mono-tech text-[9px] tracking-wider bg-[#141614] text-[#F7F5F0] px-2 py-1 cursor-pointer"
+                                className="hidden lg:block absolute bottom-2 left-2 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity font-mono-tech text-[9px] tracking-wider bg-[#141614] text-[#F7F5F0] px-2 py-1 cursor-pointer"
                               >
                                 COMPARE →
                               </button>
                             )}
+
                           </div>
 
                           <div className="pt-2.5 space-y-1">
@@ -1591,7 +2059,7 @@ function App() {
                         onClick={() => setDisplayLimit((prev) => prev + 40)}
                         className="font-mono-tech text-xs tracking-wider text-[#141614] hover:text-[#52574F] underline cursor-pointer uppercase"
                       >
-                        LOAD MORE FILMS  ↓
+                        LOAD MORE FILMS  <span className="normal-case">{TOGGLE_CLOSED}</span>
                       </button>
                     ) : (
                       <div className="font-mono-tech text-[10px] tracking-widest text-[#858A81] uppercase">
@@ -1605,7 +2073,7 @@ function App() {
           </section>
 
           {/* COLUMN 3: MATCH ANALYSIS (האדום היחיד במערכת נמצא כאן) */}
-          <aside className="lg:col-span-3 lg:pr-6 lg:border-r lg:border-[#DCD7CE] space-y-8">
+          <aside className={`${selectedMovie ? 'hidden lg:block ' : ''}lg:col-span-3 lg:pr-6 lg:border-r lg:border-[#DCD7CE] space-y-8`}>
             <div className="pb-4 border-b border-[#DCD7CE]">
               <h2 className="font-mono-tech text-xs font-semibold tracking-[0.14em] text-[#141614] uppercase">
                 MATCH ANALYSIS
@@ -1616,154 +2084,11 @@ function App() {
             </div>
 
             {selectedMovie && matchAnalysisData ? (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={getImageUrl(selectedMovie.movie.local_poster)}
-                      alt={selectedMovie.movie.display_h}
-                      className="w-[42px] h-[63px] object-cover border border-[#DCD7CE] shrink-0"
-                      onError={handleImgError}
-                    />
-                    <div className="min-w-0">
-                      <span className="font-mono-tech text-[9px] text-[#858A81] uppercase block">
-                        SELECTED
-                      </span>
-                      <h4 className="text-xs font-semibold text-[#141614] truncate">
-                        {selectedMovie.movie.display_h}
-                      </h4>
-                    </div>
-                  </div>
-
-                  <span className="font-mono-tech text-[10px] text-[#858A81] shrink-0">VS</span>
-
-                  <div className="flex items-center gap-2.5 min-w-0 justify-end">
-                    <div className="min-w-0 text-left">
-                      <span className="font-mono-tech text-[9px] text-[#858A81] uppercase block">
-                        COMPARE
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleMovieSelect(matchAnalysisData.targetMovie.id)}
-                        className="text-xs font-semibold text-[#141614] hover:underline truncate block"
-                        title={matchAnalysisData.targetMovie.display_h}
-                      >
-                        {matchAnalysisData.targetMovie.display_h}
-                      </button>
-                    </div>
-                    <img
-                      src={getImageUrl(matchAnalysisData.targetMovie.local_poster)}
-                      alt={matchAnalysisData.targetMovie.display_h}
-                      className="w-[42px] h-[63px] object-cover border border-[#DCD7CE] shrink-0"
-                      onError={handleImgError}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-center justify-center py-4 border-y border-[#DCD7CE]">
-                  <CircularGauge
-                    value={matchAnalysisData.targetMovie.matchScore}
-                    size={110}
-                    strokeWidth={3}
-                    label="SIMILARITY"
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 border-b border-[#DCD7CE] pb-4 text-center" dir="ltr">
-                  <div>
-                    <div className="font-mono-tech text-base font-bold text-[#141614]">
-                      {String(matchAnalysisData.zeroCount).padStart(2, '0')}
-                    </div>
-                    <div className="font-mono-tech text-[8px] tracking-wider text-[#858A81] uppercase">
-                      IDENTICAL
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-mono-tech text-base font-bold text-[#141614]">
-                      {String(matchAnalysisData.closeCount).padStart(2, '0')}
-                    </div>
-                    <div className="font-mono-tech text-[8px] tracking-wider text-[#858A81] uppercase">
-                      CLOSE (±1)
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-mono-tech text-base font-bold text-[#D93829]">
-                      {String(matchAnalysisData.diffCount).padStart(2, '0')}
-                    </div>
-                    <div className="font-mono-tech text-[8px] tracking-wider text-[#D93829] uppercase">
-                      DIFFERENT (≥2)
-                    </div>
-                  </div>
-                </div>
-
-                {/* 12 הצירים - צבע אדום בלעדי לפער של 2 ומעלה */}
-                <div className="space-y-4">
-                  <div className="flex items-baseline justify-between font-mono-tech text-[10px] text-[#858A81] uppercase" dir="ltr">
-                    <span>12 AXES DELTA</span>
-                    <span>LARGEST FIRST</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {matchAnalysisData.axes.map((dim) => {
-                      const deltaStr =
-                        dim.rawDelta > 0
-                          ? `+${dim.rawDelta}`
-                          : dim.rawDelta === 0
-                          ? '0'
-                          : `${dim.rawDelta}`;
-                      const isHighDiff = dim.absDelta >= 2;
-
-                      return (
-                        <div key={dim.key} className="space-y-1">
-                          <div className="flex justify-between items-baseline text-xs">
-                            <span className="text-[#141614] truncate">{dim.label}</span>
-                            <span
-                              className={`font-mono-tech text-xs shrink-0 ${
-                                isHighDiff
-                                  ? 'text-[#D93829] font-bold'
-                                  : 'text-[#141614] font-medium'
-                              }`}
-                              dir="ltr"
-                            >
-                              {dim.valTarget} → {dim.valSelected} ({deltaStr})
-                            </span>
-                          </div>
-
-                          <div className="w-full h-[1px] bg-[#DCD7CE] relative">
-                            {dim.absDelta > 0 && (
-                              <div
-                                className={`h-full absolute ${
-                                  isHighDiff ? 'bg-[#D93829]' : 'bg-[#141614]'
-                                }`}
-                                style={{ width: `${Math.min(100, (dim.absDelta / 9) * 100)}%` }}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-[#DCD7CE] space-y-1.5 font-mono-tech text-[10px]" dir="ltr">
-                  <div className="flex justify-between">
-                    <span className="text-[#858A81]">VECTOR DISTANCE</span>
-                    <span className="text-[#141614]">
-                      {(matchAnalysisData.targetMovie.vectorDistance ?? 0).toFixed(3)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#858A81]">DIRECTOR BONUS</span>
-                    <span className="text-[#141614]">
-                      +{matchAnalysisData.targetMovie.directorBonus ?? 0}%
-                    </span>
-                  </div>
-                </div>
-              </div>
+              renderMatchAnalysisBody()
             ) : (
               <div className="space-y-4 font-mono-tech text-[10px] text-[#858A81]" dir="ltr">
                 <p className="font-sans text-xs text-[#52574F] leading-relaxed" dir="rtl">
-                  בחר סרט מהגריד כדי לטעון ניתוח מרחק אוקלידי משוקלל והשוואת 12 צירים מלאה.
+                  בחר סרט מהגריד כדי לטעון ניתוח מרחק אוקלידי משוקלל והשוואת {vectorKeys.length} צירים מלאה.
                 </p>
                 <div className="pt-4 border-t border-[#DCD7CE] space-y-1.5">
                   <div className="flex justify-between">
@@ -1772,7 +2097,7 @@ function App() {
                   </div>
                   <div className="flex justify-between">
                     <span>DIMENSIONS</span>
-                    <span className="text-[#141614]">{schema.length} AXES</span>
+                    <span className="text-[#141614]">{vectorSchema.length} AXES</span>
                   </div>
                   <div className="flex justify-between">
                     <span>SCALING</span>
@@ -1784,6 +2109,7 @@ function App() {
           </aside>
         </div>
       </main>
+
       </>
       )}
 
@@ -1808,10 +2134,19 @@ function App() {
         </div>
       )}
 
+      <RatingSuggestionModal
+        key={selectedMovie ? selectedMovie.movie.id : 'none'}
+        isOpen={isSuggestOpen && !!selectedMovie}
+        onClose={() => setIsSuggestOpen(false)}
+        movie={selectedMovie ? selectedMovie.movie : null}
+        schema={schema}
+      />
+
       {/* WEIGHTS MODAL */}
       <WeightsSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        schema={vectorSchema}
         weights={weights}
         setWeights={setWeights}
         onReset={() => setWeights(DEFAULT_WEIGHTS)}

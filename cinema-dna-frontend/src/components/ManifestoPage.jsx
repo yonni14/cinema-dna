@@ -29,7 +29,7 @@ export default function ManifestoPage({ onBack }) {
         </div>
 
         <h1 className="text-3xl md:text-4xl font-bold text-[#141614] leading-tight tracking-tight">
-          קולנוע DNA: מיפוי וקטורי רב־ממדי של המבע הקולנועי
+          Cinema DNA: מיפוי וקטורי רב־ממדי של המבע הקולנועי
         </h1>
 
         {/* 1. מטרת המערכת */}
@@ -108,3 +108,4 @@ export default function ManifestoPage({ onBack }) {
     </main>
   );
 }
+

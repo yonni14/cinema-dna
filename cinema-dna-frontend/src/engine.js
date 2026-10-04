@@ -9,25 +9,79 @@ export const DNA_SCHEMA = [
   { key: "ambiguity_level", label: "עמימות מוסרית ונרטיבית", min: 1, max: 10, weight: 1.2, category: "המבט, הטון והפסיכולוגיה", low_label: "מוסר וסיום ברורים", high_label: "אזור אפור ופתוח" },
   { key: "grounded_vs_surreal", label: "מציאות מול סוריאליזם", min: 1, max: 10, weight: 1.4, category: "המבט, הטון והפסיכולוגיה", low_label: "מציאות יומיומית", high_label: "סוריאליזם/אלגוריה" },
   { key: "emotional_heaviness", label: "כובד רגשי ומועקה", min: 1, max: 10, weight: 0.6, category: "כובד צפייה ומסנני סף", low_label: "קליל ומנחם", high_label: "מטלטל וכבד" },
-  { key: "violence_level", label: "רמת אלימות", min: 1, max: 5, weight: 0.3, category: "כובד צפייה ומסנני סף", low_label: "ללא", high_label: "קיצוני" },
-  { key: "sexuality_level", label: "רמת מיניות", min: 1, max: 5, weight: 0.3, category: "כובד צפייה ומסנני סף", low_label: "ללא", high_label: "מפורש" }
+  { key: "violence_level", label: "אלימות בסרט כולו", min: 1, max: 5, weight: 0.3, category: "כובד צפייה ומסנני סף", low_label: "ללא", high_label: "רבה לאורך הסרט" },
+  { key: "sexuality_level", label: "מיניות בסרט כולו", min: 1, max: 5, weight: 0.3, category: "כובד צפייה ומסנני סף", low_label: "ללא", high_label: "רבה לאורך הסרט" }
 ];
+
+// שני צירים חדשים (מפרט v2.0). מופיעים באפליקציה רק כשהם קיימים במאגר
+export const NEW_AXES = [
+  { key: "cognitive_effort", label: "מאמץ קוגניטיבי", min: 1, max: 10, weight: 1.2, category: "המבט, הטון והחוויה", low_label: "נגיש", high_label: "תובעני" },
+  { key: "closing_resonance", label: "תחושת חתימה", min: 1, max: 10, weight: 1.2, category: "המבט, הטון והחוויה", low_label: "נחמה", high_label: "ריקנות קיומית" }
+];
+
+// מפתחות ה-DNA "הישנים" שיוצאים מוקטור הדמיון כשהצירים החדשים קיימים (נשארים כשדות וכסליידרי סינון)
+const WHOLE_FILM_KEYS = ["violence_level", "sexuality_level"];
+
+// false (החלטת המשתמש) = 12 הצירים הנוכחיים נשארים (כולל אלימות/מיניות של הסרט כולו) והצירים החדשים נוספים עליהם כשהם קיימים במאגר: 14 בסך הכל.
+// true = כמו במפרט: 10 מקוריים + 2 חדשים, בלי אלימות/מיניות.
+export const SPEC_VECTOR = false;
 
 export const DNA_KEYS = DNA_SCHEMA.map(s => s.key);
 
-// יצירת אובייקט משקלי ברירת מחדל דינמי מתוך הסכמה
-export const DEFAULT_WEIGHTS = DNA_SCHEMA.reduce((acc, item) => {
+// יצירת אובייקט משקלי ברירת מחדל דינמי מתוך הסכמה (כולל הצירים החדשים)
+export const DEFAULT_WEIGHTS = [...DNA_SCHEMA, ...NEW_AXES].reduce((acc, item) => {
   acc[item.key] = item.weight;
   return acc;
 }, {});
+
+function readNum(item, key) {
+  const v = item[key] ?? (item.dna || {})[key];
+  const n = Number(v);
+  return v !== null && v !== undefined && v !== "" && Number.isFinite(n) ? n : null;
+}
+
+/** האם הצירים החדשים קיימים במאגר (לפחות סרט אחד עם שני הציונים) */
+export function hasNewAxesData(rawList) {
+  return rawList.some((item) => readNum(item, "cognitive_effort") !== null && readNum(item, "closing_resonance") !== null);
+}
+
+/** הסכמה המוצגת באפליקציה (סליידרים, פילטרים): 12 הנוכחיים, ועוד 2 החדשים אם קיימים במאגר */
+export function buildSchema(rawList) {
+  return hasNewAxesData(rawList) ? [...DNA_SCHEMA, ...NEW_AXES] : DNA_SCHEMA;
+}
+
+/** המפתחות שנכנסים לוקטור הדמיון ולפירוט 12 הצירים */
+export function getVectorKeys(schema) {
+  const hasNew = schema.some((s) => s.key === "cognitive_effort");
+  return schema
+    .map((s) => s.key)
+    .filter((k) => !(SPEC_VECTOR && hasNew && WHOLE_FILM_KEYS.includes(k)));
+}
+
+const TRIGGER_VOCAB = ["sexual_assault", "animal_harm", "suicide"];
+function parseTriggerWarnings(v) {
+  if (!Array.isArray(v)) return null; // null = אין נתון במאגר
+  return v.filter((t) => TRIGGER_VOCAB.includes(t));
+}
+function parseThemes(v) {
+  if (!Array.isArray(v)) return [];
+  return v.filter((t) => typeof t === "string" && t).slice(0, 3);
+}
+
+function parsePeakThreshold(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 && n <= 4 ? n : null;
+}
 
 /**
  * עיבוד ראשוני של הנתונים מה-JSON:
  * שומר על חישוב ממוצע וסטיית תקן, ומשאיר וקטור z-score נקי
  */
-export function processRawMovies(rawList) {
+export function processRawMovies(rawList, schemaArg) {
+  const schema = schemaArg || buildSchema(rawList);
+  const vectorKeys = getVectorKeys(schema);
   const n = rawList.length;
-  const numFeatures = DNA_KEYS.length;
+  const numFeatures = vectorKeys.length;
 
   const movies = rawList.map((item, idx) => {
     const dna = item.dna || {};
@@ -51,10 +105,17 @@ export function processRawMovies(rawList) {
       local_director_image: item.local_director_image || "",
       oscar_wins: parseInt(item.oscar_wins ?? awards.oscar_wins ?? 0, 10),
       oscar_nominations: parseInt(item.oscar_nominations ?? awards.oscar_nominations ?? 0, 10),
+      // שדות סף חדשים (1-4) מסקריפט הסקורינג המחודש; null אם עדיין לא קיימים במאגר
+      peak_violence_threshold: parsePeakThreshold(item.peak_violence_threshold ?? dna.peak_violence_threshold),
+      peak_sexuality_threshold: parsePeakThreshold(item.peak_sexuality_threshold ?? dna.peak_sexuality_threshold),
+      // שדות חדשים (מפרט v2.0): אופציונליים. null / [] כשעדיין אין במאגר
+      trigger_warnings: parseTriggerWarnings(item.trigger_warnings ?? dna.trigger_warnings),
+      themes: parseThemes(item.themes ?? dna.themes),
+      zKeys: vectorKeys,
       dna: {}
     };
 
-    DNA_SCHEMA.forEach((s) => {
+    schema.forEach((s) => {
       const mid = s.max === 5 ? 3 : 5;
       let val = dna[s.key] ?? item[s.key] ?? mid;
       val = Math.round(Number(val));
@@ -70,7 +131,7 @@ export function processRawMovies(rawList) {
   const stds = new Array(numFeatures).fill(0);
 
   for (let j = 0; j < numFeatures; j++) {
-    const key = DNA_KEYS[j];
+    const key = vectorKeys[j];
     let sum = 0;
     for (let i = 0; i < n; i++) sum += movies[i].dna[key];
     means[j] = sum / n;
@@ -85,7 +146,7 @@ export function processRawMovies(rawList) {
 
   // שמירת וקטור ה-Z הטהור לכל סרט
   movies.forEach((m) => {
-    m.zVector = DNA_KEYS.map((k, j) => (m.dna[k] - means[j]) / stds[j]);
+    m.zVector = vectorKeys.map((k, j) => (m.dna[k] - means[j]) / stds[j]);
   });
 
   return movies;
@@ -101,8 +162,9 @@ export function getRecommendations(targetMovie, allMovies, topK = 8, customWeigh
   const numFeatures = targetVec.length;
   const targetDir = targetMovie.director_h;
 
-  // הכנת מערך משקלים פעיל לפי סדר המאפיינים ב-DNA_KEYS
-  const activeWeights = DNA_KEYS.map(k => customWeights[k] ?? 0);
+  // הכנת מערך משקלים פעיל לפי סדר מפתחות הוקטור של הסרט
+  const vectorKeys = targetMovie.zKeys || DNA_KEYS;
+  const activeWeights = vectorKeys.map(k => customWeights[k] ?? DEFAULT_WEIGHTS[k] ?? 0);
 
   const scored = [];
   const allDists = [];
@@ -175,3 +237,4 @@ export function resolveAssetUrl(localPath) {
   const base = clean.startsWith("posters/") ? (POSTER_BASE_URL || ASSETS_BASE_URL) : ASSETS_BASE_URL;
   return base ? `${base}/${clean}` : `/${clean}`;
 }
+
