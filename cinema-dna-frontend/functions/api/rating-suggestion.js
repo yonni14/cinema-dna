@@ -1,7 +1,29 @@
+// Cloudflare Pages Function: POST /api/rating-suggestion
+// Accepts the payload shape sent by RatingSuggestionModal.jsx:
+//   { movie_id, title, imdb_id, website (honeypot), changes: [{axis, current, proposed, reason}] }
+// Stores it in the D1 table `rating_suggestions` (bound as env.DB).
+
+const AXES = [
+  "warmth_humanity",
+  "psych_depth",
+  "irony_satire",
+  "moral_ambiguity",
+  "surrealism",
+  "pacing",
+  "aesthetic",
+  "structure",
+];
+
+const numOrNull = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const strOrNull = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  // בדיקת קיום קישור למסד הנתונים
   if (!env.DB) {
     return new Response(JSON.stringify({ error: "D1 Database binding 'DB' not configured" }), {
       status: 500,
@@ -12,15 +34,39 @@ export async function onRequestPost(context) {
   try {
     const data = await request.json();
 
-    if (!data.movie_id || !data.movie_title) {
-      return new Response(JSON.stringify({ error: "Missing required fields: movie_id or movie_title" }), {
+    // Honeypot field ("website") — bots fill it, humans never see it.
+    // Silently accept without storing anything.
+    if (data.website) {
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const movie_id = data.movie_id;
+    // The modal sends `title`; accept `movie_title` too for robustness.
+    const movie_title = data.title || data.movie_title;
+    const changes = Array.isArray(data.changes) ? data.changes : [];
+
+    if (!movie_id || !movie_title || changes.length === 0) {
+      return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // הפקת כתובת IP לצורכי מעקב ללא חשיפת פרטי זיהוי
     const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+
+    // Map the changes array onto the table's per-axis columns.
+    const byAxis = {};
+    for (const c of changes) {
+      if (c && AXES.includes(c.axis)) byAxis[c.axis] = c;
+    }
+    const pairs = [];
+    for (const axis of AXES) {
+      const c = byAxis[axis];
+      pairs.push(numOrNull(c && c.proposed), strOrNull(c && c.reason));
+    }
 
     const query = `
       INSERT INTO rating_suggestions (
@@ -46,29 +92,7 @@ export async function onRequestPost(context) {
       )
     `;
 
-    await env.DB.prepare(query)
-      .bind(
-        data.movie_id,
-        data.movie_title,
-        clientIP,
-        data.warmth_humanity ?? null,
-        data.warmth_reason ?? null,
-        data.psych_depth ?? null,
-        data.psych_reason ?? null,
-        data.irony_satire ?? null,
-        data.irony_reason ?? null,
-        data.moral_ambiguity ?? null,
-        data.moral_reason ?? null,
-        data.surrealism ?? null,
-        data.surreal_reason ?? null,
-        data.pacing ?? null,
-        data.pacing_reason ?? null,
-        data.aesthetic ?? null,
-        data.aesthetic_reason ?? null,
-        data.structure ?? null,
-        data.structure_reason ?? null
-      )
-      .run();
+    await env.DB.prepare(query).bind(movie_id, movie_title, clientIP, ...pairs).run();
 
     return new Response(JSON.stringify({ success: true, message: "Suggestion recorded successfully" }), {
       status: 200,
