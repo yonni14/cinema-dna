@@ -299,7 +299,7 @@ function App() {
 
   const computeVectorDistance = (movieA, movieB) => {
     if (!movieA || !movieB || !vectorSchema.length) return 0;
-    let sumSq = 0;
+    let sumAbs = 0;
     vectorSchema.forEach((axis) => {
       const w = weights[axis.key] ?? axis.weight ?? 1.0;
       if (w <= 0) return;
@@ -308,9 +308,9 @@ function App() {
       const valB = Number(movieB.dna?.[axis.key] ?? movieB[axis.key] ?? axis.min ?? 1);
       const zA = (valA - stat.mean) / stat.std;
       const zB = (valB - stat.mean) / stat.std;
-      sumSq += w * Math.pow(zA - zB, 2);
+      sumAbs += w * Math.abs(zA - zB);
     });
-    return Math.sqrt(sumSq);
+    return sumAbs;
   };
 
   const schemaMap = useMemo(() => {
@@ -2088,7 +2088,7 @@ function App() {
             ) : (
               <div className="space-y-4 font-mono-tech text-[10px] text-[#858A81]" dir="ltr">
                 <p className="font-sans text-xs text-[#52574F] leading-relaxed" dir="rtl">
-                  בחר סרט מהגריד כדי לטעון ניתוח מרחק אוקלידי משוקלל והשוואת {vectorKeys.length} צירים מלאה.
+                  בחר סרט מהגריד כדי לטעון ניתוח מרחק מנהטן משוקלל והשוואת {vectorKeys.length} צירים מלאה.
                 </p>
                 <div className="pt-4 border-t border-[#DCD7CE] space-y-1.5">
                   <div className="flex justify-between">

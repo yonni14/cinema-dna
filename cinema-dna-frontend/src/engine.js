@@ -173,22 +173,22 @@ export function getRecommendations(targetMovie, allMovies, topK = 8, customWeigh
     const other = allMovies[i];
     if (other.id === targetMovie.id) continue;
 
-    let distSq = 0;
+    let distSum = 0;
     const otherVec = other.zVector;
 
     for (let j = 0; j < numFeatures; j++) {
       const w = activeWeights[j];
       if (w <= 0) continue; // דילוג על מאפיין שמנוטרל
       const diff = targetVec[j] - otherVec[j];
-      distSq += w * (diff * diff);
+      distSum += w * Math.abs(diff); // מרחק מנהטן (L1) משוקלל
     }
 
-    const dist = Math.sqrt(distSq);
+    const dist = distSum;
     scored.push({ movie: other, dist });
     if (dist > 0) allDists.push(dist);
   }
 
-  // חישוב scale_factor (אחוזון 40 של המרחקים)
+  // חישוב scale_factor (אחוזון 40 של מרחקי מנהטן; הציון מנורמל ביחס אליו, ולכן אין צורך בכיול מחדש)
   allDists.sort((a, b) => a - b);
   const p40Idx = Math.floor(allDists.length * 0.4);
   const scaleFactor = allDists[p40Idx] || 1.0;
