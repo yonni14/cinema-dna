@@ -820,8 +820,28 @@ function App() {
 
   // אם קובץ המדיה לא קיים (למשל אחרי מעבר ל-R2 או מחיקת תיקיות מקומיות),
   // מחליפים לפלייסהולדר במקום אייקון תמונה שבורה.
+  // לפני מעבר לפלייסהולדר מנסים לטעון שוב את התמונה (עד 3 ניסיונות, בהשהיה גדלה),
+  // כי כשל חד-פעמי (למשל הגבלת קצב של r2.dev בעת טעינת הרבה פוסטרים יחד) לא אומר שהקובץ חסר.
+  const IMG_RETRY_DELAYS_MS = [800, 2000, 4500];
+
   const handleImgError = (e) => {
-    if (e.currentTarget.src !== PLACEHOLDER_IMG) e.currentTarget.src = PLACEHOLDER_IMG;
+    const img = e.currentTarget;
+    if (img.src === PLACEHOLDER_IMG) return;
+    const baseSrc = img.src.replace(/([?&])imgretry=\d+&?/, '$1').replace(/[?&]$/, '');
+    if (img.dataset.retryBase !== baseSrc) {
+      img.dataset.retryBase = baseSrc;
+      img.dataset.retryCount = '0';
+    }
+    const attempt = Number(img.dataset.retryCount || '0');
+    if (attempt >= IMG_RETRY_DELAYS_MS.length) {
+      img.src = PLACEHOLDER_IMG;
+      return;
+    }
+    img.dataset.retryCount = String(attempt + 1);
+    setTimeout(() => {
+      if (!img.isConnected || img.dataset.retryBase !== baseSrc) return;
+      img.src = baseSrc + (baseSrc.includes('?') ? '&' : '?') + 'imgretry=' + (attempt + 1);
+    }, IMG_RETRY_DELAYS_MS[attempt]);
   };
 
   // גוף ניתוח ההשוואה - משותף לפאנל הצד (מחשב) ולפאנל הנפתח מתחת לעמודות הממוצעים
