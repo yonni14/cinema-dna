@@ -223,18 +223,22 @@ export function filterMoviesByDna(allMovies, filters) {
   });
 }
 /**
- * פתרון נתיב נכס מדיה (פוסטר / תמונת במאי).
- * כאשר מוגדר VITE_ASSETS_BASE_URL (למשל דומיין R2 ציבורי), הנתיב היחסי
- * משורשר אליו; אחרת מוחזר הנתיב המקומי מתוך public/.
+ * Posters and director images always use our Pages origin. Legacy R2 Vite
+ * variables cannot bypass the proxy. Other media keeps its existing behavior.
  */
-const POSTER_BASE_URL = (import.meta.env.VITE_POSTER_BASE_URL || "").replace(/\/+$/, "");
 const ASSETS_BASE_URL = (import.meta.env.VITE_ASSETS_BASE_URL || "").replace(/\/+$/, "");
 
 export function resolveAssetUrl(localPath) {
   if (!localPath) return "";
-  const clean = String(localPath).replace(/^\/+/, "");
-  if (/^https?:\/\//i.test(clean)) return clean;
-  const base = clean.startsWith("posters/") ? (POSTER_BASE_URL || ASSETS_BASE_URL) : ASSETS_BASE_URL;
-  return base ? `${base}/${clean}` : `/${clean}`;
+  let clean = String(localPath).replace(/^\/+/, "");
+  if (/^https?:\/\//i.test(clean)) {
+    const url = new URL(clean);
+    if (/\.r2\.dev$/i.test(url.hostname) && /^\/(posters|directors)\//.test(url.pathname)) {
+      clean = url.pathname.slice(1) + url.search;
+    } else {
+      return clean;
+    }
+  }
+  if (/^(posters|directors)\//.test(clean)) return `/${clean}`;
+  return ASSETS_BASE_URL ? `${ASSETS_BASE_URL}/${clean}` : `/${clean}`;
 }
-

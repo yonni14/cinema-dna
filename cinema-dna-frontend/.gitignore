@@ -32,3 +32,9 @@ public/directors/
 .env
 .env.*
 !.env.example
+
+# The poster images stay in R2, but their same-origin route is source code.
+!functions/posters/
+!functions/posters/*.js
+!functions/directors/
+!functions/directors/*.js
